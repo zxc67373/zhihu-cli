@@ -30,3 +30,4 @@ cookies.json
 # Temp
 *.tmp
 *.bak
+.coverage

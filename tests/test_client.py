@@ -1,0 +1,366 @@
+"""Tests for zhihu_cli.client module."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests
+
+from zhihu_cli.client import ZhihuClient
+from zhihu_cli.config import DEFAULT_TIMEOUT, ZHIHU_API_V4
+from zhihu_cli.exceptions import DataFetchError, LoginError
+
+
+@pytest.fixture()
+def client():
+    """Create a ZhihuClient with dummy cookies."""
+    c = ZhihuClient({"z_c0": "test_token"})
+    yield c
+    c.close()
+
+
+def _make_response(status_code=200, json_data=None, text=""):
+    """Create a mock requests.Response."""
+    resp = MagicMock(spec=requests.Response)
+    resp.status_code = status_code
+    resp.text = text
+    resp.json.return_value = json_data if json_data is not None else {}
+    return resp
+
+
+# ── Context manager ───────────────────────────────────────────────────────────
+
+
+class TestClientContextManager:
+    def test_enter_returns_self(self):
+        c = ZhihuClient({"z_c0": "token"})
+        with c as client:
+            assert client is c
+
+    def test_exit_closes_session(self):
+        c = ZhihuClient({"z_c0": "token"})
+        with patch.object(c._session, "close") as mock_close:
+            with c:
+                pass
+            mock_close.assert_called_once()
+
+
+# ── _get error handling ───────────────────────────────────────────────────────
+
+
+class TestClientGet:
+    def test_401_raises_login_error(self, client):
+        with patch.object(client._session, "get", return_value=_make_response(401)):
+            with pytest.raises(LoginError):
+                client._get("https://example.com")
+
+    def test_403_raises_login_error(self, client):
+        with patch.object(client._session, "get", return_value=_make_response(403)):
+            with pytest.raises(LoginError):
+                client._get("https://example.com")
+
+    def test_500_raises_data_fetch_error(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(500, text="Internal Server Error"),
+        ):
+            with pytest.raises(DataFetchError, match="500"):
+                client._get("https://example.com")
+
+    def test_request_exception_raises_data_fetch_error(self, client):
+        with patch.object(
+            client._session, "get",
+            side_effect=requests.ConnectionError("Connection refused"),
+        ):
+            with pytest.raises(DataFetchError, match="Request failed"):
+                client._get("https://example.com")
+
+    def test_invalid_json_raises_data_fetch_error(self, client):
+        resp = _make_response(200)
+        resp.json.side_effect = ValueError("No JSON")
+        with patch.object(client._session, "get", return_value=resp):
+            with pytest.raises(DataFetchError, match="Invalid JSON"):
+                client._get("https://example.com")
+
+    def test_200_returns_json(self, client):
+        data = {"name": "test"}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=data),
+        ):
+            result = client._get("https://example.com")
+            assert result == data
+
+
+# ── get_self_info ──────────────────────────────────────────────────────────────
+
+
+class TestGetSelfInfo:
+    def test_returns_user_dict(self, client, mock_user_info):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=mock_user_info),
+        ):
+            result = client.get_self_info()
+            assert result["name"] == "TestUser"
+            assert result["answer_count"] == 42
+
+    def test_returns_empty_dict_for_non_dict(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=[]),
+        ):
+            result = client.get_self_info()
+            assert result == {}
+
+
+# ── search ─────────────────────────────────────────────────────────────────────
+
+
+class TestSearch:
+    def test_search_calls_api(self, client, mock_search_result):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=mock_search_result),
+        ) as mock_get:
+            result = client.search("Python", search_type="general", limit=5)
+            assert len(result["data"]) == 2
+
+            call_args = mock_get.call_args
+            assert "search_v3" in call_args[0][0]
+            assert call_args[1]["params"]["q"] == "Python"
+            assert call_args[1]["params"]["limit"] == 5
+
+
+# ── get_hot_list ───────────────────────────────────────────────────────────────
+
+
+class TestGetHotList:
+    def test_returns_dict_with_data(self, client, mock_hot_list):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=mock_hot_list),
+        ):
+            result = client.get_hot_list(limit=2)
+            assert "data" in result
+            assert len(result["data"]) == 2
+
+    def test_fallback_on_error(self, client, mock_hot_list):
+        call_count = 0
+        original_data = mock_hot_list
+
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call fails
+                return _make_response(500, text="Error")
+            # Fallback succeeds
+            return _make_response(200, json_data=original_data)
+
+        with patch.object(client._session, "get", side_effect=side_effect):
+            result = client.get_hot_list()
+            assert "data" in result
+
+    def test_wraps_list_result(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=[{"q": "test"}]),
+        ):
+            result = client.get_hot_list()
+            assert isinstance(result, dict)
+            assert "data" in result
+
+
+# ── get_question ───────────────────────────────────────────────────────────────
+
+
+class TestGetQuestion:
+    def test_question_api_url(self, client):
+        q_data = {"title": "Test Q", "answer_count": 5}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=q_data),
+        ) as mock_get:
+            result = client.get_question("12345")
+            assert result["title"] == "Test Q"
+            assert "questions/12345" in mock_get.call_args[0][0]
+
+
+# ── get_question_answers ──────────────────────────────────────────────────────
+
+
+class TestGetQuestionAnswers:
+    def test_returns_answers(self, client):
+        ans_data = {"data": [{"id": 1, "voteup_count": 10}]}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=ans_data),
+        ):
+            result = client.get_question_answers("12345", limit=5)
+            assert len(result["data"]) == 1
+
+    def test_sort_by_param(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data={"data": []}),
+        ) as mock_get:
+            client.get_question_answers("12345", sort_by="created")
+            params = mock_get.call_args[1]["params"]
+            assert params["sort_by"] == "created"
+
+
+# ── get_answer ─────────────────────────────────────────────────────────────────
+
+
+class TestGetAnswer:
+    def test_answer_api_url(self, client):
+        ans = {"content": "Answer content", "voteup_count": 100}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=ans),
+        ) as mock_get:
+            result = client.get_answer("67890")
+            assert result["voteup_count"] == 100
+            assert "answers/67890" in mock_get.call_args[0][0]
+
+
+# ── get_user_profile ──────────────────────────────────────────────────────────
+
+
+class TestGetUserProfile:
+    def test_returns_profile(self, client, mock_user_info):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=mock_user_info),
+        ) as mock_get:
+            result = client.get_user_profile("test-user")
+            assert result["name"] == "TestUser"
+            assert "members/test-user" in mock_get.call_args[0][0]
+
+
+# ── vote ───────────────────────────────────────────────────────────────────────
+
+
+class TestVote:
+    def test_vote_up_success(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(200),
+        ) as mock_post:
+            result = client.vote_up("12345")
+            assert result is True
+            call_args = mock_post.call_args
+            assert "voters" in call_args[0][0]
+            assert call_args[1]["json"] == {"type": "up"}
+
+    def test_vote_up_failure(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(403),
+        ):
+            result = client.vote_up("12345")
+            assert result is False
+
+    def test_vote_neutral(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(200),
+        ):
+            result = client.vote_neutral("12345")
+            assert result is True
+
+    def test_vote_network_error(self, client):
+        with patch.object(
+            client._session, "post",
+            side_effect=requests.ConnectionError("timeout"),
+        ):
+            result = client.vote_up("12345")
+            assert result is False
+
+
+# ── follow_question ────────────────────────────────────────────────────────────
+
+
+class TestFollowQuestion:
+    def test_follow_success(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(200),
+        ):
+            assert client.follow_question("99999") is True
+
+    def test_follow_204(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(204),
+        ):
+            assert client.follow_question("99999") is True
+
+    def test_unfollow_success(self, client):
+        with patch.object(
+            client._session, "delete",
+            return_value=_make_response(200),
+        ):
+            assert client.unfollow_question("99999") is True
+
+    def test_follow_network_error(self, client):
+        with patch.object(
+            client._session, "post",
+            side_effect=requests.ConnectionError("err"),
+        ):
+            assert client.follow_question("99999") is False
+
+
+# ── get_feed ───────────────────────────────────────────────────────────────────
+
+
+class TestGetFeed:
+    def test_returns_dict(self, client):
+        feed_data = {"data": [{"type": "answer"}]}
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=feed_data),
+        ):
+            result = client.get_feed(limit=5)
+            assert isinstance(result, dict)
+            assert "data" in result
+
+    def test_wraps_list_result(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data=[{"type": "answer"}]),
+        ):
+            result = client.get_feed()
+            assert isinstance(result, dict)
+            assert "data" in result
+
+
+# ── get_collections ────────────────────────────────────────────────────────────
+
+
+class TestGetCollections:
+    def test_raises_when_no_url_token(self, client):
+        with patch.object(
+            client._session, "get",
+            return_value=_make_response(200, json_data={}),
+        ):
+            with pytest.raises(LoginError):
+                client.get_collections()
+
+    def test_returns_collections(self, client):
+        me_data = {"url_token": "test-user"}
+        fav_data = {"data": [{"title": "My Collection", "item_count": 5}]}
+        call_count = 0
+
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if url.endswith("/me"):
+                return _make_response(200, json_data=me_data)
+            return _make_response(200, json_data=fav_data)
+
+        with patch.object(client._session, "get", side_effect=side_effect):
+            result = client.get_collections()
+            assert len(result["data"]) == 1
