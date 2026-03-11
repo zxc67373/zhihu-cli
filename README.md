@@ -211,7 +211,7 @@ CLI (click) → ZhihuClient (requests)
 
 ## 工作原理
 
-1. **认证** — 优先读取 `~/.zhihu-cli/cookies.json`；未命中时启动 Playwright 浏览器展示二维码，等待用户扫码登录。也可通过 `--cookie` 直接提供 cookie 字符串。
+1. **认证** — 优先读取 `~/.zhihu-cli/cookies.json`；未命中时可通过 `zhihu login --qrcode`（调用知乎官方 API 在终端展示二维码）或 `--cookie` 直接提供 cookie 字符串完成登录。
 2. **登录态校验** — 登录后通过 `/api/v4/me` 接口验证会话有效性。
 3. **数据获取** — 使用 requests 通过知乎 V4 API 获取结构化 JSON 数据。
 4. **CLI 展示** — 使用 Rich 库渲染美观的终端表格输出。
@@ -222,8 +222,28 @@ CLI (click) → ZhihuClient (requests)
 - `zhihu status` 只检查本地已保存的 cookie，不发起网络请求
 - `zhihu login --cookie` 要求 cookie 至少包含 `z_c0`
 - 用户查询使用 URL Token（即知乎个人主页的路径部分，如 `zhihu.com/people/xxx` 中的 `xxx`）
-- 二维码登录需要先安装 Playwright 浏览器：`playwright install chromium`
+- 二维码登录使用知乎官方 API，无需安装 Playwright
 
+## 网络安全设计
+
+本工具在设计与实现上遵循以下安全原则，以降低凭证与隐私风险：
+
+- **凭证仅存本地**  
+  登录态（Cookie）仅写入用户本机 `~/.zhihu-cli/cookies.json`，文件权限为 `0600`（仅当前用户可读写）。程序不会将 Cookie 或任何登录凭证上传至本工具维护方或第三方服务。
+
+- **全程 HTTPS**  
+  所有与知乎的通信均使用 HTTPS，请求仅发往知乎官方域名（如 `www.zhihu.com`、`api.zhihu.com`），避免凭证或内容在网络上明文传输。
+
+- **无密码落地**  
+  支持两种登录方式：二维码扫码（调用知乎官方登录 API，由用户在手机端完成授权）和手动粘贴 Cookie。本工具不收集、不存储账号密码。
+
+- **最小权限与最小请求**  
+  仅请求完成当前命令所需的知乎 API，不额外拉取或上报用户数据；Cookie 仅用于向知乎证明身份，不用于其他用途。
+
+- **可审计与可复现**  
+  项目开源，依赖列表在 `pyproject.toml` 中声明，无混淆或闭源运行时；用户可自行审查代码与依赖，或在隔离环境中安装运行。
+
+建议仅在可信环境中使用本工具，并妥善保管本地 Cookie 文件；通过 `zhihu logout` 可清除本地保存的登录态。
 
 ## License
 
