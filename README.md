@@ -57,7 +57,7 @@ playwright install chromium
 本项目提供了 AI Agent Skill，可通过 [OpenClaw](https://openclaw.ai) 下载使用：
 
 ```
-https://clawhub.ai/BAIGUANGMEI/pyzhihu-cli
+clawhub install pyzhihu-cli
 ```
 
 安装后，AI Agent 可自动获取 zhihu-cli 的完整使用说明、命令参考、项目架构和开发指南。
