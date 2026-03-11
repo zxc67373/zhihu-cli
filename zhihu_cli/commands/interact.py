@@ -1,4 +1,4 @@
-"""Interaction commands: vote, follow-question, collections, notifications."""
+"""Interaction commands: vote, follow-question, ask, pin, collections, notifications."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from ..display import (
     print_error,
     print_info,
     print_success,
+    print_warning,
     strip_html,
     truncate,
 )
@@ -138,3 +139,90 @@ def notifications(limit: int, as_json: bool):
         console.print()
         console.print(table)
         console.print()
+
+
+@click.command()
+@click.argument("title")
+@click.option("-d", "--detail", default="", help="Question description")
+@click.option("-t", "--topic", "topics", multiple=True, help="Topic ID (repeatable)")
+def ask(title: str, detail: str, topics: tuple[str, ...]):
+    """Post a new question (发布提问)."""
+    if not title.strip():
+        print_error("Title cannot be empty")
+        sys.exit(1)
+
+    with _get_client() as client:
+        try:
+            result = client.create_question(
+                title=title.strip(),
+                detail=detail,
+                topic_ids=list(topics) if topics else None,
+            )
+            qid = result.get("id", "")
+            if qid:
+                print_success(
+                    f"Question created!  ID: [bold]{qid}[/bold]\n"
+                    f"  https://www.zhihu.com/question/{qid}"
+                )
+            else:
+                print_warning("Question may have been created but no ID returned")
+        except Exception as e:
+            print_error(f"Failed to create question: {e}")
+            sys.exit(1)
+
+
+@click.command()
+@click.argument("content")
+def pin(content: str):
+    """Write a new pin / thought (发布想法)."""
+    if not content.strip():
+        print_error("Content cannot be empty")
+        sys.exit(1)
+
+    with _get_client() as client:
+        try:
+            result = client.create_pin(content=content.strip())
+            pid = result.get("id", "")
+            if pid:
+                print_success(
+                    f"Pin published!  ID: [bold]{pid}[/bold]\n"
+                    f"  https://www.zhihu.com/pin/{pid}"
+                )
+            else:
+                print_warning("Pin may have been created but no ID returned")
+        except Exception as e:
+            print_error(f"Failed to create pin: {e}")
+            sys.exit(1)
+
+
+@click.command()
+@click.argument("title")
+@click.argument("content")
+@click.option("-t", "--topic", "topics", multiple=True, help="Topic ID (repeatable)")
+def article(title: str, content: str, topics: tuple[str, ...]):
+    """Publish a new article (发布文章)."""
+    if not title.strip():
+        print_error("Title cannot be empty")
+        sys.exit(1)
+    if not content.strip():
+        print_error("Content cannot be empty")
+        sys.exit(1)
+
+    with _get_client() as client:
+        try:
+            result = client.create_article(
+                title=title.strip(),
+                content=f"<p>{content.strip()}</p>",
+                topic_ids=list(topics) if topics else None,
+            )
+            aid = result.get("id", "")
+            if aid:
+                print_success(
+                    f"Article published!  ID: [bold]{aid}[/bold]\n"
+                    f"  https://zhuanlan.zhihu.com/p/{aid}"
+                )
+            else:
+                print_warning("Article may have been published but no ID returned")
+        except Exception as e:
+            print_error(f"Failed to publish article: {e}")
+            sys.exit(1)

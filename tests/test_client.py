@@ -364,3 +364,171 @@ class TestGetCollections:
         with patch.object(client._session, "get", side_effect=side_effect):
             result = client.get_collections()
             assert len(result["data"]) == 1
+
+
+# ── create_question ────────────────────────────────────────────────────────────
+
+
+class TestCreateQuestion:
+    def test_success(self, client):
+        resp_data = {"id": 123456}
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(200, json_data=resp_data),
+        ) as mock_post:
+            result = client.create_question("Test question")
+            assert result == {"id": 123456}
+            call_args = mock_post.call_args
+            assert "questions" in call_args[0][0]
+            payload = call_args[1]["json"]
+            assert payload["title"] == "Test question"
+
+    def test_with_detail_and_topics(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(201, json_data={"id": 789}),
+        ) as mock_post:
+            result = client.create_question("Q", detail="Detail", topic_ids=["1", "2"])
+            assert result["id"] == 789
+            payload = mock_post.call_args[1]["json"]
+            assert payload["detail"] == "Detail"
+            assert payload["topic_url_tokens"] == ["1", "2"]
+
+    def test_401_raises_login_error(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(401),
+        ):
+            with pytest.raises(LoginError):
+                client.create_question("Q")
+
+    def test_failure_status(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(400, text="Bad Request"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_question("Q")
+
+    def test_network_error(self, client):
+        with patch.object(
+            client._session, "post",
+            side_effect=requests.ConnectionError("err"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_question("Q")
+
+
+# ── create_pin ─────────────────────────────────────────────────────────────────
+
+
+class TestCreatePin:
+    def test_success(self, client):
+        resp_data = {"id": 999}
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(200, json_data=resp_data),
+        ) as mock_post:
+            result = client.create_pin("Hello world")
+            assert result == {"id": 999}
+            payload = mock_post.call_args[1]["data"]
+            import json
+            content = json.loads(payload["content"])
+            assert content[0]["type"] == "text"
+            assert content[0]["content"] == "Hello world"
+
+    def test_201_success(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(201, json_data={"id": 111}),
+        ):
+            result = client.create_pin("Pin text")
+            assert result["id"] == 111
+
+    def test_401_raises_login_error(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(401),
+        ):
+            with pytest.raises(LoginError):
+                client.create_pin("text")
+
+    def test_failure_status(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(403, text="Forbidden"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_pin("text")
+
+    def test_network_error(self, client):
+        with patch.object(
+            client._session, "post",
+            side_effect=requests.ConnectionError("err"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_pin("text")
+
+
+# ── create_article ──────────────────────────────────────────────────────────────
+
+
+class TestCreateArticle:
+    def test_success(self, client):
+        draft_resp = _make_response(200, json_data={"id": "draft123"})
+        patch_resp = _make_response(200)
+        publish_resp = _make_response(200, json_data={"id": "draft123", "title": "T"})
+        call_count = 0
+
+        def post_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return draft_resp
+
+        with patch.object(client._session, "post", side_effect=post_side_effect), \
+             patch.object(client._session, "patch", return_value=patch_resp), \
+             patch.object(client._session, "put", return_value=publish_resp):
+            result = client.create_article("Title", "Body")
+            assert result["id"] == "draft123"
+
+    def test_draft_401_raises_login_error(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(401),
+        ):
+            with pytest.raises(LoginError):
+                client.create_article("T", "C")
+
+    def test_draft_failure(self, client):
+        with patch.object(
+            client._session, "post",
+            return_value=_make_response(500, text="Server Error"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_article("T", "C")
+
+    def test_draft_network_error(self, client):
+        with patch.object(
+            client._session, "post",
+            side_effect=requests.ConnectionError("err"),
+        ):
+            with pytest.raises(DataFetchError):
+                client.create_article("T", "C")
+
+    def test_patch_failure(self, client):
+        draft_resp = _make_response(200, json_data={"id": "d1"})
+        patch_resp = _make_response(500, text="err")
+        with patch.object(client._session, "post", return_value=draft_resp), \
+             patch.object(client._session, "patch", return_value=patch_resp):
+            with pytest.raises(DataFetchError):
+                client.create_article("T", "C")
+
+    def test_publish_failure(self, client):
+        draft_resp = _make_response(200, json_data={"id": "d1"})
+        patch_resp = _make_response(200)
+        publish_resp = _make_response(500, text="err")
+        with patch.object(client._session, "post", return_value=draft_resp), \
+             patch.object(client._session, "patch", return_value=patch_resp), \
+             patch.object(client._session, "put", return_value=publish_resp):
+            with pytest.raises(DataFetchError):
+                client.create_article("T", "C")

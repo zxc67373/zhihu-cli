@@ -313,3 +313,90 @@ class TestNotificationsCommand:
             result = runner.invoke(cli, ["notifications"])
             assert result.exit_code == 0
             assert "Notifications" in result.output
+
+
+class TestAskCommand:
+    def test_ask_success(self, runner, saved_cookies):
+        mc = _make_mock_client(create_question={"id": 123456})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["ask", "What is Python?"])
+            assert result.exit_code == 0
+            assert "123456" in result.output
+
+    def test_ask_with_detail_and_topics(self, runner, saved_cookies):
+        mc = _make_mock_client(create_question={"id": 789})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(
+                cli, ["ask", "Title", "-d", "Detail text", "-t", "100", "-t", "200"]
+            )
+            assert result.exit_code == 0
+            assert "789" in result.output
+
+    def test_ask_no_id_returned(self, runner, saved_cookies):
+        mc = _make_mock_client(create_question={})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["ask", "Q"])
+            assert result.exit_code == 0
+            assert "may have been created" in result.output
+
+    def test_ask_error(self, runner, saved_cookies):
+        mc = _make_mock_client()
+        mc.create_question.side_effect = Exception("API error")
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["ask", "Q"])
+            assert result.exit_code != 0
+
+
+class TestPinCommand:
+    def test_pin_success(self, runner, saved_cookies):
+        mc = _make_mock_client(create_pin={"id": 999})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["pin", "Hello world"])
+            assert result.exit_code == 0
+            assert "999" in result.output
+
+    def test_pin_no_id_returned(self, runner, saved_cookies):
+        mc = _make_mock_client(create_pin={})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["pin", "Text"])
+            assert result.exit_code == 0
+            assert "may have been created" in result.output
+
+    def test_pin_error(self, runner, saved_cookies):
+        mc = _make_mock_client()
+        mc.create_pin.side_effect = Exception("API error")
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["pin", "Text"])
+            assert result.exit_code != 0
+
+
+class TestArticleCommand:
+    def test_article_success(self, runner, saved_cookies):
+        mc = _make_mock_client(create_article={"id": "art123"})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["article", "Title", "Body text"])
+            assert result.exit_code == 0
+            assert "art123" in result.output
+
+    def test_article_no_id_returned(self, runner, saved_cookies):
+        mc = _make_mock_client(create_article={})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["article", "Title", "Body"])
+            assert result.exit_code == 0
+            assert "may have been published" in result.output
+
+    def test_article_with_topics(self, runner, saved_cookies):
+        mc = _make_mock_client(create_article={"id": "art456"})
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(
+                cli, ["article", "T", "B", "-t", "100", "-t", "200"]
+            )
+            assert result.exit_code == 0
+            assert "art456" in result.output
+
+    def test_article_error(self, runner, saved_cookies):
+        mc = _make_mock_client()
+        mc.create_article.side_effect = Exception("API error")
+        with patch(_CLIENT_PATCH, return_value=mc):
+            result = runner.invoke(cli, ["article", "T", "B"])
+            assert result.exit_code != 0

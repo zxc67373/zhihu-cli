@@ -9,7 +9,15 @@ import click
 from . import __version__
 from .commands.auth import login, logout, status, whoami
 from .commands.content import answer, answers, feed, hot, question, search, topic
-from .commands.interact import collections, follow_question, notifications, vote
+from .commands.interact import (
+    article,
+    ask,
+    collections,
+    follow_question,
+    notifications,
+    pin,
+    vote,
+)
 from .commands.user import followers, following, user, user_answers, user_articles
 
 
@@ -55,6 +63,9 @@ cli.add_command(following)
 # Interactions
 cli.add_command(vote)
 cli.add_command(follow_question)
+cli.add_command(ask)
+cli.add_command(pin)
+cli.add_command(article)
 cli.add_command(collections)
 cli.add_command(notifications)
 

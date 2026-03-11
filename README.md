@@ -9,6 +9,7 @@
 - **热榜** — 查看知乎热榜
 - **问题** — 查看问题详情及回答
 - **回答** — 查看回答详情及评论
+- **发布** — 发布提问、发布想法、发布文章
 - **用户** — 查看用户资料、回答、文章、关注/粉丝
 - **推荐** — 获取首页推荐内容
 - **话题** — 查看话题详情及热门问题
@@ -27,6 +28,7 @@
 | Social     | followers, following                     | 查看粉丝、关注列表             |
 | Feed       | feed, topic                              | 推荐 Feed、话题详情            |
 | Interact   | vote, follow-question                    | 赞同回答、关注问题             |
+| Create     | ask, pin, article                        | 发布提问、发布想法、发布文章     |
 | Other      | collections, notifications               | 收藏夹、通知                   |
 
 > 所有数据命令支持 `--json` 输出。
@@ -159,6 +161,21 @@ zhihu vote <answer_id> --undo
 # 关注 / 取消关注问题
 zhihu follow-question <question_id>
 zhihu follow-question <question_id> --undo
+```
+
+### 创作
+
+```bash
+# 发布提问
+zhihu ask "如何学习 Python？"
+zhihu ask "什么是机器学习？" -d "请详细解释" -t 19550517 -t 19551275
+
+# 发布想法
+zhihu pin "今天天气真好！"
+
+# 发布文章
+zhihu article "文章标题" "文章内容"
+zhihu article "标题" "内容" -t 19550517
 ```
 
 ### 其他

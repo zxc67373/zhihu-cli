@@ -7,7 +7,7 @@ description: "Install, use, develop, debug, test, and extend the zhihu-cli (pyzh
 
 ## What is zhihu-cli
 
-zhihu-cli（PyPI 包名 `pyzhihu-cli`）是一个 Python 命令行工具，在终端中浏览知乎内容。支持搜索、热榜、问题、回答、用户、投票、关注等 20 个子命令。
+zhihu-cli（PyPI 包名 `pyzhihu-cli`）是一个 Python 命令行工具，在终端中浏览知乎内容。支持搜索、热榜、问题、回答、用户、投票、关注、发布提问、发布想法、发布文章等 23 个子命令。
 
 - **PyPI 包名**: `pyzhihu-cli`
 - **CLI 命令名**: `zhihu`
@@ -152,7 +152,30 @@ zhihu follow-question 12345678
 zhihu follow-question --unfollow 12345678
 ```
 
-### 9. 其他
+### 9. 创作
+
+```bash
+# 发布提问
+zhihu ask "如何学习 Python？"
+
+# 发布提问（带描述和话题）
+zhihu ask "什么是机器学习？" -d "请详细解释" -t 19550517 -t 19551275
+
+# 发布想法
+zhihu pin "今天天气真好！"
+```
+
+### 10. 发布文章
+
+```bash
+# 发布文章
+zhihu article "文章标题" "文章内容"
+
+# 发布文章（带话题）
+zhihu article "标题" "内容" -t 19550517
+```
+
+### 11. 其他
 
 ```bash
 zhihu collections           # 收藏夹
@@ -185,6 +208,9 @@ zhihu --help                # 帮助
 | 用户 | `following URL_TOKEN [--limit N] [--json]` | 关注列表 |
 | 互动 | `vote ANSWER_ID [--neutral]` | 赞同/取消赞同 |
 | 互动 | `follow-question QID [--unfollow]` | 关注/取消关注问题 |
+| 创作 | `ask TITLE [-d DETAIL] [-t TOPIC_ID ...]` | 发布提问 |
+| 创作 | `pin CONTENT` | 发布想法 |
+| 创作 | `article TITLE CONTENT [-t TOPIC_ID ...]` | 发布文章 |
 | 其他 | `collections [--limit N] [--json]` | 收藏夹 |
 | 其他 | `notifications [--limit N] [--json]` | 通知 |
 
@@ -207,7 +233,7 @@ zhihu_cli/
     ├── auth.py           # login, logout, status, whoami
     ├── content.py        # search, hot, question, answer, answers, feed, topic
     ├── user.py           # user, user-answers, user-articles, followers, following
-    └── interact.py       # vote, follow-question, collections, notifications
+    └── interact.py       # vote, follow-question, ask, pin, article, collections, notifications
 ```
 
 ### Module Responsibilities
@@ -254,6 +280,9 @@ zhihu_cli/
 | `get_topic(id)` | `/topics/{id}` | 话题 |
 | `vote_up(id)` / `vote_neutral(id)` | POST `/answers/{id}/voters` | 投票 |
 | `follow_question(id)` / `unfollow_question(id)` | POST/DELETE `/questions/{id}/followers` | 关注问题 |
+| `create_question(title, detail, topic_ids)` | POST `/questions` | 发布提问 |
+| `create_pin(content)` | POST `/pins` | 发布想法 |
+| `create_article(title, content, topic_ids)` | zhuanlan API: draft → patch → publish | 发布文章 |
 | `get_collections(...)` | `/members/{token}/favlists` | 收藏夹 |
 | `get_notifications(...)` | `/notifications` | 通知 |
 

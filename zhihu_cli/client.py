@@ -6,12 +6,13 @@ All operations use HTTP requests, no browser automation needed after login.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 import requests
 
-from .config import DEFAULT_HEADERS, DEFAULT_TIMEOUT, ZHIHU_API_V4
+from .config import DEFAULT_HEADERS, DEFAULT_TIMEOUT, ZHIHU_API_V4, ZHIHU_ZHUANLAN_API
 from .exceptions import DataFetchError, LoginError
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,10 @@ class ZhihuClient:
         self._session.headers.update(DEFAULT_HEADERS)
         for name, value in cookie_dict.items():
             self._session.cookies.set(name, value, domain=".zhihu.com")
+        # CSRF token required by write APIs
+        xsrf = cookie_dict.get("_xsrf", "")
+        if xsrf:
+            self._session.headers["x-xsrftoken"] = xsrf
 
     def __enter__(self):
         return self
@@ -352,6 +357,152 @@ class ZhihuClient:
         except requests.RequestException as e:
             logger.error("Unfollow question failed: %s", e)
             return False
+
+    # ===== Create Question =====
+
+    def create_question(self, title: str, detail: str = "",
+                        topic_ids: list[str] | None = None) -> dict:
+        """Create a new question.
+
+        Args:
+            title: Question title.
+            detail: Question detail / description (HTML supported).
+            topic_ids: List of topic IDs to tag on the question.
+
+        Returns:
+            API response dict (contains question id on success).
+        """
+        url = f"{ZHIHU_API_V4}/questions"
+        payload: dict[str, Any] = {
+            "title": title,
+            "detail": detail,
+        }
+        if topic_ids:
+            payload["topic_url_tokens"] = topic_ids
+        try:
+            resp = self._session.post(url, json=payload, timeout=DEFAULT_TIMEOUT)
+        except requests.RequestException as e:
+            raise DataFetchError(f"Create question failed: {e}") from e
+
+        if resp.status_code == 401:
+            raise LoginError("Session expired or not logged in")
+        if resp.status_code not in (200, 201):
+            raise DataFetchError(
+                f"Create question failed ({resp.status_code}): {resp.text[:200]}"
+            )
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+
+    # ===== Create Pin (想法) =====
+
+    def create_pin(self, content: str) -> dict:
+        """Create a new pin (想法).
+
+        Args:
+            content: Pin text content (supports HTML).
+
+        Returns:
+            API response dict (contains pin id on success).
+        """
+        url = f"{ZHIHU_API_V4}/pins"
+        payload = {"content": json.dumps([{"type": "text", "content": content}])}
+        headers = {"x-requested-with": "fetch"}
+        try:
+            resp = self._session.post(
+                url, data=payload, headers=headers, timeout=DEFAULT_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            raise DataFetchError(f"Create pin failed: {e}") from e
+
+        if resp.status_code == 401:
+            raise LoginError("Session expired or not logged in")
+        if resp.status_code not in (200, 201):
+            raise DataFetchError(
+                f"Create pin failed ({resp.status_code}): {resp.text[:200]}"
+            )
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+
+    # ===== Create Article (专栏文章) =====
+
+    def create_article(self, title: str, content: str,
+                        topic_ids: list[str] | None = None) -> dict:
+        """Create and publish a new article.
+
+        Workflow: create draft → set title/content → publish.
+
+        Args:
+            title: Article title.
+            content: Article body (HTML).
+            topic_ids: Optional list of topic IDs.
+
+        Returns:
+            API response dict (contains article id on success).
+        """
+        base = ZHIHU_ZHUANLAN_API
+
+        # Step 1: create draft
+        try:
+            resp = self._session.post(
+                f"{base}/articles/drafts", json={}, timeout=DEFAULT_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            raise DataFetchError(f"Create article draft failed: {e}") from e
+        if resp.status_code == 401:
+            raise LoginError("Session expired or not logged in")
+        if resp.status_code != 200:
+            raise DataFetchError(
+                f"Create article draft failed ({resp.status_code}): {resp.text[:200]}"
+            )
+        try:
+            draft = resp.json()
+        except ValueError as e:
+            raise DataFetchError(f"Invalid draft response: {e}") from e
+        draft_id = draft.get("id", "")
+        if not draft_id:
+            raise DataFetchError("Draft created but no ID returned")
+
+        # Step 2: update draft with title and content
+        patch_data: dict[str, Any] = {"title": title, "content": content}
+        if topic_ids:
+            patch_data["topics"] = topic_ids
+        try:
+            resp = self._session.patch(
+                f"{base}/articles/{draft_id}/draft",
+                json=patch_data,
+                timeout=DEFAULT_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            raise DataFetchError(f"Update article draft failed: {e}") from e
+        if resp.status_code not in (200, 204):
+            raise DataFetchError(
+                f"Update article draft failed ({resp.status_code}): {resp.text[:200]}"
+            )
+
+        # Step 3: publish
+        publish_data = {"column": None, "commentPermission": "anyone"}
+        try:
+            resp = self._session.put(
+                f"{base}/articles/{draft_id}/publish",
+                json=publish_data,
+                timeout=DEFAULT_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            raise DataFetchError(f"Publish article failed: {e}") from e
+        if resp.status_code == 401:
+            raise LoginError("Session expired or not logged in")
+        if resp.status_code != 200:
+            raise DataFetchError(
+                f"Publish article failed ({resp.status_code}): {resp.text[:200]}"
+            )
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
 
     # ===== Collections =====
 
