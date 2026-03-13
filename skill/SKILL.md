@@ -1,9 +1,48 @@
 ---
 name: zhihu-cli
 description: "提供知乎的 CLI 工具 (pyzhihu-cli），在终端完成搜索、热榜、看问题与回答、发想法/提问/文章、点赞关注等一整套操作；用自然语言说出需求即可由 Agent 代为执行，无需记命令。"
+# 前置依赖与数据范围（Purpose & Capability / Instruction Scope / Credentials）
+requires_binaries: ["zhihu"]   # 必须已安装 pyzhihu-cli，命令行入口为 zhihu
+config_paths:
+  - "~/.zhihu-cli/"            # 配置目录（Windows: %USERPROFILE%\\.zhihu-cli）
+  - "~/.zhihu-cli/cookies.json"      # 读写：登录态 Cookie，权限 0600
+  - "~/.zhihu-cli/login_qrcode.png"  # 读：扫码登录时生成的二维码图片
+  - "~/.zhihu-cli/debug_headers.json" # 可选写：ZHIHU_CLI_DEBUG_HEADERS=1 时写入
+optional_integrations:
+  openclaw: "用于在扫码登录流程中向用户配置的渠道（Telegram/Discord/Slack 等）发送二维码图片与说明文字；需用户自行配置 OpenClaw 及对应渠道凭证，本技能不持有也不声明 OpenClaw 的凭证。登录时会先将 ~/.zhihu-cli/login_qrcode.png 复制到 OpenClaw 工作目录下的 media 文件夹（默认 ~/.openclaw/workspace/media；若 media 不存在则先创建），再以该路径作为 --media 发送。"
+# 本技能不声明环境变量；Cookie 仅存于上述 config_paths，不上传。使用 OpenClaw 发送内容需用户侧已配置并知情。
 ---
 
 # zhihu-cli 技能
+
+## 前置条件与数据范围声明
+
+使用本技能前请确认以下内容；**使用即表示知悉**下述行为与数据范围。
+
+### 必需条件
+
+- **已安装 zhihu 命令行**：系统 PATH 中可执行 `zhihu`（即已通过 `uv tool install pyzhihu-cli` / `pipx install pyzhihu-cli` / `pip install pyzhihu-cli` 之一安装）。
+- **本地配置目录**：本技能会读写 **`~/.zhihu-cli/`**（Windows：`%USERPROFILE%\.zhihu-cli`），包括：
+  - **`cookies.json`**：登录后保存的知乎 Cookie，仅存本地，权限 0600；Agent 会通过调用 `zhihu` 使用该文件，**不得将 Cookie 内容上传、转发或写入对话/日志**。
+  - **`login_qrcode.png`**：执行 `zhihu login --qrcode` 时生成的二维码图片；Agent 在扫码登录流程中**可能读取该文件**，用于通过 OpenClaw 发送给用户（见下）。
+
+### 可选集成与知情同意
+
+- **OpenClaw（向外部渠道发送内容）**：在扫码登录场景下，为便于用户扫码，Agent 可能将 **`~/.zhihu-cli/login_qrcode.png`** 通过 **`openclaw message send --media ...`** 发送至用户已配置的即时通讯渠道（如 Telegram、Discord、Slack 等）。该行为**超出“仅帮用户执行 zhihu 命令”**，涉及：
+  - **读取**本地二维码图片；
+  - **向用户配置的外部渠道发送**该图片及说明文字。
+- **使用本技能即表示知悉并同意**：若环境已配置 OpenClaw 且用户请求扫码登录，Agent 可能执行上述读取与发送；OpenClaw 的渠道与凭证由用户自行配置与管理，本技能**不声明、不持有**任何 OpenClaw 或第三方通讯凭证。
+- 若用户未配置 OpenClaw 或不愿通过外部渠道接收二维码，可仅依赖终端内显示的二维码完成扫码，或使用 `zhihu login --cookie "..."` 方式登录。
+
+### 凭证与数据流小结
+
+| 类型 | 说明 |
+|------|------|
+| **zhihu 凭证** | 仅存于 `~/.zhihu-cli/cookies.json`，不要求环境变量；Agent 仅通过调用 `zhihu` 间接使用，不得泄露。 |
+| **OpenClaw** | 本技能不声明其凭证；若使用 `openclaw message send`，需用户已配置 OpenClaw 及对应渠道，并知悉 Agent 会向该渠道发送二维码等内容。 |
+| **数据流出** | 除上述“向用户配置的 OpenClaw 渠道发送二维码/文案”外，不向其他外部目标发送 Cookie 或登录凭证。 |
+
+---
 
 ## 项目简介
 
@@ -55,9 +94,11 @@ pip install -U pyzhihu-cli
 
 ## Agent Rules
 
+以下规则均以**前置条件与数据范围声明**为前提：仅在使用已安装的 `zhihu` CLI 及上述配置路径下操作；通过 OpenClaw 发送二维码时，视为用户已配置并知情。
+
 1. **信息获取类命令说明**：使用 `--json` 输出原始 JSON 数据，获得更加详细的数据。
 2. **更新提示**：当用户提出「更新 zhihu」「升级到最新版」「检查是否有新版本」等诉求时，提示其按安装方式执行升级命令（uv 用 `uv tool upgrade pyzhihu-cli`，pipx 用 `pipx upgrade pyzhihu-cli`，pip 用 `pip install -U pyzhihu-cli`）；若无法确定安装方式，可一并给出三种方式供用户选择。
-3. **协助用户登录时必须检查二维码是否已发送给用户**：只要执行了 `zhihu login --qrcode`，二维码就会同时保存为图片，路径为 **`~/.zhihu-cli/login_qrcode.png`**（Windows 下为 `%USERPROFILE%\.zhihu-cli\login_qrcode.png`）。Agent 在提示用户扫码前，**必须先检查本轮登录流程中该二维码是否已经发送给用户**；若未发送，则必须立即读取图片并发送。不能只依赖终端内显示二维码，也不能在未确认已发送的情况下直接进入等待扫码。登录成功后 CLI 会自动保存 Cookie，无需用户再操作。
+3. **协助用户登录时必须检查二维码是否已发送给用户**：只要执行了 `zhihu login --qrcode`，二维码就会同时保存为图片，路径为 **`~/.zhihu-cli/login_qrcode.png`**（Windows 下为 `%USERPROFILE%\.zhihu-cli\login_qrcode.png`）。Agent 在提示用户扫码前，**必须先检查本轮登录流程中该二维码是否已经发送给用户**；若未发送，且用户环境已配置 OpenClaw 且符合前置声明中的知情同意，则**先将该图片复制到 OpenClaw 工作目录下的 media 文件夹**（若 media 不存在则先创建；路径如 `~/.openclaw/workspace/media/login_qrcode.png`），再以**该路径**执行 `openclaw message send --media <工作目录路径> ...` 发送；若未配置 OpenClaw 或用户未同意向外部渠道发送，则仅依赖终端内展示并提示用户扫码。登录成功后 CLI 会自动保存 Cookie，无需用户再操作。
 4. **登录过程完整性**：
    - **不能切断登录进程**：一旦执行 `zhihu login --qrcode` 并进入扫码登录流程，Agent 不得主动中断、关闭、杀掉、替换或遗弃该登录进程。
    - **保持原进程等待完成**：在二维码已发送且等待用户扫码确认期间，必须保持该命令继续运行，直到登录成功、明确失败、超时退出，或用户明确要求停止。
@@ -72,7 +113,26 @@ pip install -U pyzhihu-cli
 
 ## Agent 使用 OpenClaw 向用户发送内容
 
+**范围与知情**：本小节涉及**读取本地文件**（如 `~/.zhihu-cli/login_qrcode.png`）并**通过 OpenClaw 向用户配置的外部渠道发送**。仅当用户环境已配置 OpenClaw 且用户请求扫码登录时执行；用户应知悉并同意该数据流（见上文「前置条件与数据范围声明」）。
+
 当 Agent 需要把二维码、说明文字等主动推送给用户时，应使用 `openclaw message send`。
+
+**登录时发送二维码的强制要求**：必须先**将 `~/.zhihu-cli/login_qrcode.png` 复制到 OpenClaw 工作目录下的 `media` 文件夹**（**若 `media` 不存在则先创建**），再以**该路径**（如 `~/.openclaw/workspace/media/login_qrcode.png`）作为 `--media` 发送给用户，不得直接使用 `~/.zhihu-cli/login_qrcode.png` 作为 `--media`。OpenClaw 工作目录默认为 **`~/.openclaw/workspace`**，故 media 路径默认为 **`~/.openclaw/workspace/media`**（可通过 `~/.openclaw/openclaw.json` 或环境变量等覆盖，以当前环境为准）。
+
+### 登录时发送二维码（必须经工作目录）
+
+1. 确认二维码已生成：`~/.zhihu-cli/login_qrcode.png`（Windows：`%USERPROFILE%\.zhihu-cli\login_qrcode.png`）。
+2. **复制到 OpenClaw 工作目录下的 `media` 文件夹**（例如 `~/.openclaw/workspace/media`）：**若 `media` 文件夹不存在则先创建**，再复制，得到新路径如 `~/.openclaw/workspace/media/login_qrcode.png`（若环境使用其他工作目录，则使用该目录下的 `media` 路径）。
+   ```bash
+   mkdir -p ~/.openclaw/workspace/media    # 若 media 不存在则创建
+   cp ~/.zhihu-cli/login_qrcode.png ~/.openclaw/workspace/media/login_qrcode.png
+   ```
+   Windows 示例：先创建 media（不存在时）：`mkdir "%USERPROFILE%\.openclaw\workspace\media" 2>nul`，再复制：`copy "%USERPROFILE%\.zhihu-cli\login_qrcode.png" "%USERPROFILE%\.openclaw\workspace\media\login_qrcode.png"`（若工作目录不同则替换为目标路径）。
+3. **使用 media 路径**调用 OpenClaw 发送：
+   ```bash
+   openclaw message send --channel <渠道> --target <目标> --media ~/.openclaw/workspace/media/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"
+   ```
+4. 在对话中提示用户「二维码已发送到您的 [渠道]，请扫码并确认登录」。
 
 ### 基本用法
 
@@ -80,7 +140,7 @@ pip install -U pyzhihu-cli
 openclaw message send --channel <渠道> --target <目标> [--message "文本"] [--media <文件路径>]
 ```
 
-- **必选**：`--target`（目标用户/频道），以及 **`--message` 或 `--media` 至少其一**。
+- **必选**：`--target`（目标用户/频道），以及 **`--message` 或 `--media` 至少其一**。**登录二维码**必须使用**工作目录下 `media` 文件夹中的路径**作为 `--media`（见上）。
 - **渠道**：若配置了多个渠道，必须用 `--channel` 指定，取值如：`whatsapp` | `telegram` | `discord` | `googlechat` | `slack` | `mattermost` | `signal` | `imessage` | `msteams`；若仅配置一个渠道则可省略。
 - **目标格式**（依渠道而定）：
   - Telegram：`@username` 或 chat id
@@ -92,9 +152,8 @@ openclaw message send --channel <渠道> --target <目标> [--message "文本"] 
 
 | 场景 | 命令示例 |
 |------|----------|
-| **发送登录二维码图片** | `openclaw message send --channel telegram --target @用户 --media ~/.zhihu-cli/login_qrcode.png` |
-| **仅发图片（无文案）** | `openclaw message send --channel <渠道> --target <目标> --media /path/to/image.png` |
-| **图片 + 说明文字** | `openclaw message send --channel <渠道> --target <目标> --media ~/.zhihu-cli/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"` |
+| **发送登录二维码图片** | 若 `media` 不存在则先创建，再将 `~/.zhihu-cli/login_qrcode.png` 复制到 OpenClaw 工作目录的 `media` 文件夹（如 `~/.openclaw/workspace/media/login_qrcode.png`），再：`openclaw message send --channel telegram --target @用户 --media ~/.openclaw/workspace/media/login_qrcode.png --message "请用知乎 App 扫描图中二维码…"` |
+| **仅发图片（无文案）** | `openclaw message send --channel <渠道> --target <目标> --media <工作目录或其它路径>/image.png` |
 | **仅发文字** | `openclaw message send --channel <渠道> --target <目标> --message "登录成功，可以继续使用 zhihu 命令。"` |
 
 ### 可选参数
@@ -109,10 +168,9 @@ openclaw message send --channel <渠道> --target <目标> [--message "文本"] 
 ### 登录流程中发送二维码的推荐步骤
 
 1. 执行 `zhihu login --qrcode` 后，确认二维码已生成到 `~/.zhihu-cli/login_qrcode.png`。
-2. 若本轮尚未向用户发送过该图，则执行：
-   ```bash
-   openclaw message send --channel <用户所在渠道> --target <用户目标> --media ~/.zhihu-cli/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"
-   ```
+2. 若本轮尚未向用户发送过该图：
+   - **复制**：先确保 `media` 存在（若不存在则创建），再复制：`mkdir -p ~/.openclaw/workspace/media && cp ~/.zhihu-cli/login_qrcode.png ~/.openclaw/workspace/media/login_qrcode.png`（或当前环境的 OpenClaw 工作目录下的 `media`）。
+   - **发送**：`openclaw message send --channel <用户所在渠道> --target <用户目标> --media ~/.openclaw/workspace/media/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"`
 3. 再在对话中提示用户「二维码已发送到您的 [渠道]，请扫码并确认登录」。
 4. 保持当前 `zhihu login --qrcode` 进程不中断，等待用户扫码完成。
 
@@ -152,11 +210,13 @@ zhihu status
 1. **执行登录**：`zhihu login --qrcode`  
    二维码会保存到 **`~/.zhihu-cli/login_qrcode.png`**（Windows：`%USERPROFILE%\.zhihu-cli\login_qrcode.png`）。
 2. **检查是否已发送**：确认本轮登录流程中该二维码是否已经通过 OpenClaw 发送给用户。
-3. **若尚未发送**：必须用 OpenClaw 发送图片（可同时发说明文字）：
+3. **若尚未发送**：先将 `~/.zhihu-cli/login_qrcode.png` **复制到 OpenClaw 工作目录下的 `media` 文件夹**（**若 `media` 不存在则先创建**，如 `mkdir -p ~/.openclaw/workspace/media`），再以该路径用 OpenClaw 发送（可同时发说明文字）：
    ```bash
-   openclaw message send --channel <渠道> --target <目标> --media ~/.zhihu-cli/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"
+   mkdir -p ~/.openclaw/workspace/media    # 若 media 不存在则创建
+   cp ~/.zhihu-cli/login_qrcode.png ~/.openclaw/workspace/media/login_qrcode.png
+   openclaw message send --channel <渠道> --target <目标> --media ~/.openclaw/workspace/media/login_qrcode.png --message "请用知乎 App 扫描图中二维码，并在手机上点击「确认登录」。"
    ```
-   不能跳过此步，也不能仅依赖终端展示；若已发送过则不要重复发送。
+   不能跳过复制与发送，也不能仅依赖终端展示；若已发送过则不要重复发送。
 4. **提示用户**：在对话中说明「二维码已发送到您的 [渠道]，请扫码并在手机上点击「确认登录」」。
 5. **保持进程**：在确认二维码已发送后，等待用户扫码；CLI 会轮询至多约 2 分钟。**不得切断当前登录进程**，也不要再启动新的 `zhihu login --qrcode`，直到成功、失败、超时或用户明确要求终止。**例外**：若用户明确要求「重新登录」「换号登录」「重新扫码」，则立即中断当前进程并重新执行本登录流程。
 6. **后续**：登录完成后，再执行用户原本请求的命令（如 whoami、发想法等）。
@@ -181,7 +241,7 @@ zhihu status
 用户诉求 → 若为「重新登录/换号/重新扫码」：立即中断当前进程 → zhihu login --qrcode → …
     → 否则：映射到 zhihu 子命令
     → 若需登录：zhihu status → 未登录则 zhihu login --qrcode
-        → 若未发过二维码：openclaw message send --channel <渠道> --target <目标> --media ~/.zhihu-cli/login_qrcode.png [--message "…"]
+        → 若未发过二维码：复制 ~/.zhihu-cli/login_qrcode.png 到 OpenClaw 工作目录/media → openclaw message send --channel <渠道> --target <目标> --media <工作目录>/media/login_qrcode.png [--message "…"]
         → 提示用户扫码 → 保持登录进程直至完成（用户要求重新登录时则中断并重新登录）
     → 执行 zhihu <子命令> [--json]
     → 整理结果或处理错误并回复用户
@@ -198,7 +258,7 @@ zhihu status
 zhihu login --qrcode
 ```
 
-执行后除在终端显示二维码外，会**自动将二维码保存为图片**至 **`~/.zhihu-cli/login_qrcode.png`**。Agent 在扫码登录场景下必须先检查该图在本轮是否已通过 **OpenClaw** 发送给用户；若未发送则执行 `openclaw message send --channel <渠道> --target <目标> --media ~/.zhihu-cli/login_qrcode.png`（可加 `--message "请用知乎 App 扫描图中二维码…"`），不能只依赖终端展示。登录开始后须保持原登录进程持续运行，不能中途切断。
+执行后除在终端显示二维码外，会**自动将二维码保存为图片**至 **`~/.zhihu-cli/login_qrcode.png`**。Agent 在扫码登录场景下必须先检查该图在本轮是否已通过 **OpenClaw** 发送给用户；若未发送则**先将该图复制到 OpenClaw 工作目录下的 `media` 文件夹**（若 `media` 不存在则先创建，如 `mkdir -p ~/.openclaw/workspace/media`；路径如 `~/.openclaw/workspace/media/login_qrcode.png`），再执行 `openclaw message send --channel <渠道> --target <目标> --media <工作目录>/media/login_qrcode.png`（可加 `--message "请用知乎 App 扫描图中二维码…"`），不能只依赖终端展示。登录开始后须保持原登录进程持续运行，不能中途切断。
 
 ```bash
 # 方式二：手动提供 Cookie 字符串（至少包含 z_c0）
