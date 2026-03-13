@@ -73,11 +73,11 @@ class TestDictToCookieStr:
 
 
 class TestHasRequiredCookies:
-    def test_has_z_c0(self):
-        assert _has_required_cookies({"z_c0": "abc", "other": "xyz"})
+    def test_has_all_required(self):
+        assert _has_required_cookies({"z_c0": "abc", "_xsrf": "x", "d_c0": "d"})
 
     def test_missing_z_c0(self):
-        assert not _has_required_cookies({"_xsrf": "abc"})
+        assert not _has_required_cookies({"_xsrf": "abc", "d_c0": "d"})
 
     def test_empty_dict(self):
         assert not _has_required_cookies({})
@@ -89,12 +89,13 @@ class TestHasRequiredCookies:
 class TestSaveCookies:
     def test_saves_and_loads(self, tmp_config_dir):
         config_dir, cookie_file = tmp_config_dir
-        save_cookies("z_c0=test_token; _xsrf=xsrf_val")
+        save_cookies("z_c0=test_token; _xsrf=xsrf_val; d_c0=dc0_val")
 
         assert cookie_file.exists()
         data = json.loads(cookie_file.read_text(encoding="utf-8"))
         assert data["cookies"]["z_c0"] == "test_token"
         assert data["cookies"]["_xsrf"] == "xsrf_val"
+        assert data["cookies"]["d_c0"] == "dc0_val"
 
     def test_get_saved_cookie_string(self, saved_cookies):
         _, _, cookie_dict = saved_cookies

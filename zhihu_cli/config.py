@@ -10,8 +10,8 @@ COOKIE_FILE = CONFIG_DIR / "cookies.json"
 # QR code image path for AI Agent (e.g. OpenClaw) to send to user for scan login
 QRCODE_IMAGE_PATH = CONFIG_DIR / "login_qrcode.png"
 
-# z_c0 is the main authentication token for Zhihu
-REQUIRED_COOKIES = frozenset({"z_c0"})
+# Required cookies for API requests (z_c0 = auth token; _xsrf = CSRF; d_c0 = device)
+REQUIRED_COOKIES = frozenset({"z_c0", "_xsrf", "d_c0"})
 
 # Zhihu URLs
 ZHIHU_BASE_URL = "https://www.zhihu.com"

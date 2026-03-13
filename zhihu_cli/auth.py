@@ -22,6 +22,7 @@ import requests
 from .config import (
     CONFIG_DIR,
     COOKIE_FILE,
+    DEFAULT_TIMEOUT,
     get_browser_headers,
     QRCODE_IMAGE_PATH,
     REQUIRED_COOKIES,
@@ -53,8 +54,28 @@ def get_cookie_string() -> str | None:
     return None
 
 
+def _fetch_missing_cookies(cookie_dict: dict) -> dict:
+    """Request Zhihu homepage to obtain _xsrf and d_c0; return cookie_dict merged with received cookies."""
+    if "z_c0" not in cookie_dict:
+        return cookie_dict
+    session = requests.Session()
+    session.headers.update(get_browser_headers())
+    for name, value in cookie_dict.items():
+        session.cookies.set(name, value, domain=".zhihu.com")
+    try:
+        session.get(ZHIHU_BASE_URL + "/", timeout=DEFAULT_TIMEOUT)
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch missing cookies: %s", e)
+        return cookie_dict
+    out = dict(cookie_dict)
+    for c in session.cookies:
+        if c.name in ("_xsrf", "d_c0"):
+            out[c.name] = c.value
+    return out
+
+
 def _load_saved_cookies() -> str | None:
-    """Load cookies from saved file."""
+    """Load cookies from saved file. If _xsrf or d_c0 are missing but z_c0 exists, fetch them from Zhihu and save."""
     if not COOKIE_FILE.exists():
         return None
 
@@ -63,6 +84,12 @@ def _load_saved_cookies() -> str | None:
         cookies = data.get("cookies", {})
         if _has_required_cookies(cookies):
             return _dict_to_cookie_str(cookies)
+        # Has z_c0 but missing _xsrf or d_c0 — try to fetch from Zhihu
+        if "z_c0" in cookies and (REQUIRED_COOKIES - cookies.keys()):
+            merged = _fetch_missing_cookies(cookies)
+            if _has_required_cookies(merged):
+                save_cookies(_dict_to_cookie_str(merged))
+                return _dict_to_cookie_str(merged)
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning("Failed to load saved cookies: %s", e)
 

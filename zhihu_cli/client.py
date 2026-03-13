@@ -108,11 +108,16 @@ class ZhihuClient:
         """
         url = f"{ZHIHU_API_V4}/search_v3"
         params = {
+            "gk_version": "gz-gaokao",
             "t": search_type,
             "q": keyword,
             "correction": 1,
             "offset": offset,
             "limit": limit,
+            "filter_fields": "lc_idx",
+            "lc_idx": 0,
+            "show_all_topics": 0,
+            "search_source": "Normal",
         }
         return self._get(url, params=params)
 

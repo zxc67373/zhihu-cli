@@ -66,7 +66,7 @@ def login(ctx: click.Context, qrcode: bool, cookie_str: str | None):
     \b
     Methods:
       --qrcode   Scan QR code with Zhihu app (recommended)
-      --cookie   Paste cookie string (must contain z_c0)
+      --cookie   Paste cookie string (must contain z_c0, _xsrf, d_c0)
     """
     cookie_provided = (
         ctx.get_parameter_source("cookie_str") == ParameterSource.COMMANDLINE
@@ -75,7 +75,7 @@ def login(ctx: click.Context, qrcode: bool, cookie_str: str | None):
     if cookie_provided:
         parsed = cookie_str_to_dict(cookie_str or "")
         if not REQUIRED_COOKIES.issubset(parsed.keys()):
-            print_error("Invalid cookie — must contain [bold]z_c0[/bold]")
+            print_error("Invalid cookie — must contain [bold]z_c0[/bold], [bold]_xsrf[/bold], [bold]d_c0[/bold]")
             sys.exit(1)
         save_cookies("; ".join(f"{k}={v}" for k, v in parsed.items()))
         print_success("Cookie saved")

@@ -5,7 +5,6 @@ from pathlib import Path
 from zhihu_cli.config import (
     CONFIG_DIR,
     COOKIE_FILE,
-    DEFAULT_HEADERS,
     DEFAULT_TIMEOUT,
     DEFAULT_USER_AGENT,
     REQUIRED_COOKIES,
@@ -13,6 +12,7 @@ from zhihu_cli.config import (
     ZHIHU_API_V4,
     ZHIHU_BASE_URL,
     ZHIHU_LOGIN_URL,
+    get_browser_headers,
 )
 
 
@@ -23,8 +23,8 @@ class TestConfigConstants:
     def test_cookie_file_is_under_config_dir(self):
         assert COOKIE_FILE == CONFIG_DIR / "cookies.json"
 
-    def test_required_cookies_contains_z_c0(self):
-        assert "z_c0" in REQUIRED_COOKIES
+    def test_required_cookies_contains_z_c0_xsrf_d_c0(self):
+        assert REQUIRED_COOKIES == frozenset({"z_c0", "_xsrf", "d_c0"})
 
     def test_required_cookies_is_frozenset(self):
         assert isinstance(REQUIRED_COOKIES, frozenset)
@@ -43,9 +43,10 @@ class TestConfigConstants:
         assert DEFAULT_TIMEOUT > 0
 
     def test_default_headers_has_required_keys(self):
-        assert "User-Agent" in DEFAULT_HEADERS
-        assert "Referer" in DEFAULT_HEADERS
-        assert "Accept" in DEFAULT_HEADERS
+        headers = get_browser_headers()
+        assert "User-Agent" in headers
+        assert "Referer" in headers
+        assert "Accept" in headers
 
     def test_default_user_agent_is_chromium(self):
         assert "Chrome" in DEFAULT_USER_AGENT
