@@ -1,5 +1,10 @@
 # zhihu-cli
 
+[![PyPI version](https://img.shields.io/pypi/v/pyzhihu-cli?label=PyPI)](https://pypi.org/project/pyzhihu-cli/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pyzhihu-cli)](https://pypi.org/project/pyzhihu-cli/)
+[![PyPI - License](https://img.shields.io/pypi/l/pyzhihu-cli)](https://pypi.org/project/pyzhihu-cli/)
+[![ClawHub](https://img.shields.io/badge/ClawHub-install-E65100)](https://clawhub.ai/BAIGUANGMEI/pyzhihu-cli)
+
 知乎命令行工具 — 在终端搜索问题、查看回答、发布提问、发布想法、发布文章(图文混合，富文本支持)、浏览热榜
 
 ## 功能
