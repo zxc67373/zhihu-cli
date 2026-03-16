@@ -9,7 +9,7 @@
 
 ## 功能
 
-- **认证** — QR码扫描登录（终端二维码渲染），或直接复制 Cookie 登录
+- **认证** — 二维码扫码登录（终端渲染）或手动粘贴 Cookie 登录（不支持从浏览器自动获取 Cookie）
 - **搜索** — 按关键词搜索问题、回答、文章
 - **热榜** — 查看知乎热榜
 - **问题** — 查看问题详情及回答
@@ -35,6 +35,7 @@
 | Feed       | feed, topic                              | 推荐 Feed、话题详情            |
 | Interact   | vote, follow-question                    | 赞同回答、关注问题             |
 | Create     | ask, pin, article                        | 发布提问、发布想法、发布文章（图文混合，富文本支持）     |
+| Delete     | delete-question, delete-pin, delete-article | 删除自己的提问、想法、文章（需确认，可 -y 跳过） |
 | Other      | collections, notifications               | 收藏夹、通知                   |
 
 > 所有数据命令支持 `--json` 输出。
@@ -72,11 +73,13 @@ clawhub install pyzhihu-cli
 
 ### 登录
 
+仅支持两种方式：**二维码扫码** 或 **手动粘贴 Cookie**。
+
 ```bash
-# 二维码扫码登录（推荐）；同时将二维码保存为 ~/.zhihu-cli/login_qrcode.png，供 AI Agent 发送给用户扫码
+# 二维码扫码登录（推荐）；二维码会保存为 ~/.zhihu-cli/login_qrcode.png，供 AI Agent 发送给用户扫码
 zhihu login --qrcode
 
-# 手动提供 cookie 字符串（至少包含 z_c0）
+# 手动粘贴 Cookie（至少包含 z_c0、_xsrf、d_c0）
 zhihu login --cookie "z_c0=xxx; _xsrf=yyy; d_c0=zzz"
 
 # 检查登录状态
@@ -188,6 +191,12 @@ zhihu article "标题" "内容" -t 19550517
 zhihu ask "求推荐" -d "详情" -i photo.jpg
 zhihu pin "标题" -c "正文" -i image1.jpg -i image2.jpg
 zhihu article "标题" "内容" -i cover.jpg
+
+# 删除自己发布的内容（会提示确认，加 -y 跳过确认）
+zhihu delete-question <问题ID>
+zhihu delete-pin <想法ID>
+zhihu delete-article <文章ID>
+zhihu delete-question 12345678 -y
 ```
 
 ### 其他
@@ -226,7 +235,7 @@ zhihu_cli/
 
 ## 工作原理
 
-1. **认证** — 优先读取 `~/.zhihu-cli/cookies.json`；未命中时可通过 `zhihu login --qrcode`（调用知乎官方 API 在终端展示二维码）或 `--cookie` 直接提供 cookie 字符串完成登录。
+1. **认证** — 通过 `zhihu login --qrcode`（二维码扫码）或 `zhihu login --cookie "z_c0=...; _xsrf=...; d_c0=..."`（手动粘贴 Cookie）完成登录，登录态保存于 `~/.zhihu-cli/cookies.json`。
 2. **登录态校验** — 登录后通过 `/api/v4/me` 接口验证会话有效性。
 3. **数据获取** — 使用 requests 通过知乎 V4 API 获取结构化 JSON 数据。
 4. **CLI 展示** — 使用 Rich 库渲染美观的终端表格输出。
@@ -235,7 +244,7 @@ zhihu_cli/
 
 - Cookie 存储在 `~/.zhihu-cli/cookies.json`，权限 `0600`
 - `zhihu status` 只检查本地已保存的 cookie，不发起网络请求
-- `zhihu login --cookie` 要求 cookie 至少包含 `z_c0`
+- `zhihu login --cookie` 要求 Cookie 至少包含 `z_c0`、`_xsrf`、`d_c0`
 - 用户查询使用 URL Token（即知乎个人主页的路径部分，如 `zhihu.com/people/xxx` 中的 `xxx`）
 - 二维码登录使用知乎官方 API，无需安装 Playwright
 - 浏览器指纹版本号集中管理于 `config.py` 的 `CHROME_VERSION`，修改一处即可全局生效

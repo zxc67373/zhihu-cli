@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from contextlib import contextmanager
+from urllib.parse import parse_qs, urlparse
 
 import click
 
@@ -14,6 +15,7 @@ from ..display import (
     format_count,
     make_table,
     print_error,
+    print_hint,
     print_info,
     print_success,
     print_warning,
@@ -107,15 +109,36 @@ def collections(limit: int, as_json: bool):
         console.print()
 
 
+def _format_notification_line(n: dict) -> str:
+    """Format a single notification (v2/recent) for display."""
+    content = n.get("content") or {}
+    actors = content.get("actors") or []
+    verb = (content.get("verb") or "").strip()
+    target = content.get("target") or {}
+    target_text = strip_html(target.get("text", ""))
+    names = ", ".join(a.get("name", "") for a in actors if a.get("name"))
+    if names and verb:
+        line = f"{names} {verb}"
+    elif target_text:
+        line = target_text
+    else:
+        line = verb or "—"
+    if target_text and line != target_text:
+        line = f"{line} · {truncate(target_text, 40)}"
+    return line.strip() or "—"
+
+
 @click.command()
 @click.option("-l", "--limit", default=10, help="Number of items", show_default=True)
+@click.option("--offset", default=0, help="Pagination offset (from paging.next)", show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
-def notifications(limit: int, as_json: bool):
-    """Show recent notifications."""
+def notifications(limit: int, offset: int, as_json: bool):
+    """Show recent notifications (v2/recent)."""
     with _get_client() as client:
         try:
-            results = client.get_notifications(limit=limit)
+            results = client.get_notifications(limit=limit, offset=offset)
             data = results.get("data", [])
+            paging = results.get("paging", {})
         except Exception as e:
             print_error(f"Failed to fetch notifications: {e}")
             sys.exit(1)
@@ -130,14 +153,25 @@ def notifications(limit: int, as_json: bool):
 
         table = make_table(" Notifications ")
         table.add_column("#", style="dim", width=4)
+        table.add_column("Read", width=5)
         table.add_column("Content", ratio=1)
 
         for i, n in enumerate(data, 1):
-            content = strip_html(n.get("content", {}).get("text", "—"))
-            table.add_row(str(i), truncate(content, 80))
+            is_read = "✓" if n.get("is_read") else "·"
+            line = _format_notification_line(n)
+            table.add_row(str(i), is_read, truncate(line, 72))
 
         console.print()
         console.print(table)
+        next_url = paging.get("next") or ""
+        if not paging.get("is_end") and next_url and "offset=" in next_url:
+            try:
+                qs = parse_qs(urlparse(next_url).query)
+                next_offset = (qs.get("offset") or [None])[0]
+                if next_offset:
+                    print_hint(f"Next page: zhihu notifications --offset {next_offset} -l {limit}")
+            except Exception:
+                pass
         console.print()
 
 
@@ -260,4 +294,64 @@ def article(title: str, content: str, topics: tuple[str, ...], images: tuple[str
                 print_warning("Article may have been published but no ID returned")
         except Exception as e:
             print_error(f"Failed to publish article: {e}")
+            sys.exit(1)
+
+
+@click.command("delete-question")
+@click.argument("question_id", type=str)
+@click.option("-y", "--yes", "skip_confirm", is_flag=True, help="Skip confirmation")
+def delete_question(question_id: str, skip_confirm: bool):
+    """Delete your own question (删除自己发布的提问)."""
+    if not skip_confirm:
+        click.confirm(f"Delete question {question_id}? This cannot be undone.", abort=True)
+    with _get_client() as client:
+        try:
+            ok = client.delete_question(question_id)
+            if ok:
+                print_success(f"Question [bold]{question_id}[/bold] deleted")
+            else:
+                print_error("Delete request was not accepted by the server")
+                sys.exit(1)
+        except Exception as e:
+            print_error(f"Delete failed: {e}")
+            sys.exit(1)
+
+
+@click.command("delete-pin")
+@click.argument("pin_id", type=str)
+@click.option("-y", "--yes", "skip_confirm", is_flag=True, help="Skip confirmation")
+def delete_pin(pin_id: str, skip_confirm: bool):
+    """Delete your own pin / thought (删除自己发布的想法)."""
+    if not skip_confirm:
+        click.confirm(f"Delete pin {pin_id}? This cannot be undone.", abort=True)
+    with _get_client() as client:
+        try:
+            ok = client.delete_pin(pin_id)
+            if ok:
+                print_success(f"Pin [bold]{pin_id}[/bold] deleted")
+            else:
+                print_error("Delete request was not accepted by the server")
+                sys.exit(1)
+        except Exception as e:
+            print_error(f"Delete failed: {e}")
+            sys.exit(1)
+
+
+@click.command("delete-article")
+@click.argument("article_id", type=str)
+@click.option("-y", "--yes", "skip_confirm", is_flag=True, help="Skip confirmation")
+def delete_article_cmd(article_id: str, skip_confirm: bool):
+    """Delete your own article (删除自己发布的文章)."""
+    if not skip_confirm:
+        click.confirm(f"Delete article {article_id}? This cannot be undone.", abort=True)
+    with _get_client() as client:
+        try:
+            ok = client.delete_article(article_id)
+            if ok:
+                print_success(f"Article [bold]{article_id}[/bold] deleted")
+            else:
+                print_error("Delete request was not accepted by the server")
+                sys.exit(1)
+        except Exception as e:
+            print_error(f"Delete failed: {e}")
             sys.exit(1)

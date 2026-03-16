@@ -811,6 +811,57 @@ class ZhihuClient:
         except ValueError:
             return {}
 
+    # ===== Delete Own Content =====
+
+    def delete_question(self, question_id: str) -> bool:
+        """Delete a question created by the current user.
+
+        Returns True if the server accepted the delete (200/204).
+        """
+        url = f"{ZHIHU_API_V4}/questions/{question_id}"
+        try:
+            resp = self._session.delete(url, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code == 401:
+                raise LoginError("Session expired or not logged in")
+            if resp.status_code == 403:
+                raise DataFetchError("No permission to delete this question")
+            return resp.status_code in (200, 204)
+        except requests.RequestException as e:
+            raise DataFetchError(f"Delete question failed: {e}") from e
+
+    def delete_pin(self, pin_id: str) -> bool:
+        """Delete a pin (想法) created by the current user.
+
+        Returns True if the server accepted the delete (200/204).
+        """
+        url = f"{ZHIHU_API_V4}/pins/{pin_id}"
+        try:
+            resp = self._session.delete(url, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code == 401:
+                raise LoginError("Session expired or not logged in")
+            if resp.status_code == 403:
+                raise DataFetchError("No permission to delete this pin")
+            return resp.status_code in (200, 204)
+        except requests.RequestException as e:
+            raise DataFetchError(f"Delete pin failed: {e}") from e
+
+    def delete_article(self, article_id: str) -> bool:
+        """Delete an article created by the current user (专栏文章).
+
+        Returns True if the server accepted the delete (200/204).
+        """
+        base = ZHIHU_ZHUANLAN_API
+        url = f"{base}/articles/{article_id}"
+        try:
+            resp = self._session.delete(url, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code == 401:
+                raise LoginError("Session expired or not logged in")
+            if resp.status_code == 403:
+                raise DataFetchError("No permission to delete this article")
+            return resp.status_code in (200, 204)
+        except requests.RequestException as e:
+            raise DataFetchError(f"Delete article failed: {e}") from e
+
     # ===== Collections =====
 
     def get_collections(self, offset: int = 0, limit: int = 20) -> dict:
@@ -825,8 +876,13 @@ class ZhihuClient:
 
     # ===== Notifications =====
 
-    def get_notifications(self, limit: int = 20) -> dict:
-        """Get user notifications."""
-        url = f"{ZHIHU_API_V4}/notifications"
-        params = {"limit": limit}
+    def get_notifications(self, limit: int = 10, offset: int = 0,
+                          entry_name: str = "all") -> dict:
+        """Get recent notifications (v2/recent).
+
+        Returns dict with ``paging`` (is_end, next, previous) and ``data`` list.
+        Use ``offset`` from paging.next for pagination.
+        """
+        url = f"{ZHIHU_API_V4}/notifications/v2/recent"
+        params = {"limit": limit, "entry_name": entry_name, "offset": offset}
         return self._get(url, params=params)

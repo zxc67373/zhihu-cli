@@ -13,6 +13,9 @@ from .commands.interact import (
     article,
     ask,
     collections,
+    delete_article_cmd,
+    delete_pin,
+    delete_question,
     follow_question,
     notifications,
     pin,
@@ -66,6 +69,9 @@ cli.add_command(follow_question)
 cli.add_command(ask)
 cli.add_command(pin)
 cli.add_command(article)
+cli.add_command(delete_question)
+cli.add_command(delete_pin)
+cli.add_command(delete_article_cmd)
 cli.add_command(collections)
 cli.add_command(notifications)
 
