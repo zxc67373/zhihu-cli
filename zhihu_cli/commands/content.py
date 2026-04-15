@@ -18,7 +18,6 @@ from ..display import (
     print_hint,
     print_info,
     strip_html,
-    truncate,
 )
 
 
@@ -41,8 +40,9 @@ def _get_client():
               type=click.Choice(["general", "people", "topic"]),
               help="Search scope")
 @click.option("-l", "--limit", default=10, help="Max results", show_default=True)
+@click.option("-a", "--answers", default=3, help="Answers per question (0=hide)", show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
-def search(query: str, search_type: str, limit: int, as_json: bool):
+def search(query: str, search_type: str, limit: int, answers: int, as_json: bool):
     """Search Zhihu content."""
     with _get_client() as client:
         try:
@@ -60,29 +60,44 @@ def search(query: str, search_type: str, limit: int, as_json: bool):
             print_info(f'No results for "{query}"')
             return
 
-        table = make_table(f' Search: "{query}" ')
-        table.add_column("#", style="dim", width=4)
-        table.add_column("Type", width=8)
-        table.add_column("Title", ratio=1)
-        table.add_column("Info", width=20)
-
-        for i, item in enumerate(data, 1):
+        for idx, item in enumerate(data, 1):
             obj = item.get("object", item)
             item_type = item.get("type", obj.get("type", "—"))
+            item_id = str(obj.get("id", "—"))
             title = strip_html(obj.get("title", obj.get("name", "—")))
+
+            console.print()
+            console.print(f"[title]  {idx}. [{item_type}] {title}  [/title]")
+            console.print(f"  [dim]ID: {item_id}[/dim]")
+
             # pick useful info snippet
-            info = ""
             if "follower_count" in obj:
-                info = f"{format_count(obj['follower_count'])} followers"
+                console.print(f"  {format_count(obj['follower_count'])} followers")
             elif "excerpt" in obj:
-                info = truncate(strip_html(obj["excerpt"]), 30)
+                console.print(f"  {strip_html(obj['excerpt'])}")
             elif "answer_count" in obj:
-                info = f"{format_count(obj['answer_count'])} answers"
+                console.print(f"  {format_count(obj['answer_count'])} answers")
 
-            table.add_row(str(i), item_type, title, info)
+            # Show answers for answer/question type results
+            if answers > 0 and item_type == "search_result" and item_id != "—":
+                q_id = obj.get("question", {}).get("id", item_id)
+                try:
+                    ans_result = client.get_question_answers(
+                        str(q_id), limit=answers,
+                    )
+                    ans_data = ans_result.get("data", [])
+                except Exception:
+                    ans_data = []
 
-        console.print()
-        console.print(table)
+                if ans_data:
+                    for a in ans_data:
+                        a_author = a.get("author", {}).get("name", "—")
+                        a_content = strip_html(a.get("excerpt", a.get("content", "")))
+                        a_upvotes = format_count(a.get("voteup_count", 0))
+                        console.print(
+                            f"    [dim]{a_author}:[/dim] {a_content}  [dim]{a_upvotes} upvotes[/dim]"
+                        )
+
         console.print()
 
 
@@ -168,7 +183,7 @@ def question(question_id: int, as_json: bool):
         console.print(f"[title]  {title}  [/title]")
         console.print()
         if detail and detail != "—":
-            console.print(truncate(detail, 300))
+            console.print(detail)
             console.print()
 
         stats = format_stats_line({
@@ -213,7 +228,7 @@ def answers(question_id: int, limit: int, as_json: bool, sort_by: str):
 
         for i, ans in enumerate(data, 1):
             author = ans.get("author", {}).get("name", "Anonymous")
-            excerpt = truncate(strip_html(ans.get("excerpt", ans.get("content", "—"))), 60)
+            excerpt = strip_html(ans.get("excerpt", ans.get("content", "—")))
             upvotes = format_count(ans.get("voteup_count", 0))
             table.add_row(str(i), author, excerpt, f"[bold]{upvotes}[/bold]")
 
@@ -246,7 +261,7 @@ def answer(answer_id: int, as_json: bool, comments: bool, limit: int):
         console.print()
         console.print(f"[title]  Answer by {author}  [/title]")
         console.print()
-        console.print(truncate(content, 500))
+        console.print(content)
         console.print()
 
         stats = format_stats_line({
@@ -326,7 +341,7 @@ def feed(limit: int, as_json: bool):
             title = strip_html(
                 target.get("title", "")
                 or target.get("question", {}).get("title", "")
-                or truncate(strip_html(target.get("excerpt", "—")), 40)
+                or strip_html(target.get("excerpt", "—"))
             )
             author = target.get("author", {}).get("name", "—")
             table.add_row(item_id, item_type, title, author)
@@ -425,7 +440,7 @@ def topic(topic_id: int, as_json: bool):
         console.print(f"[title]  # {name}  [/title]")
         if intro:
             console.print()
-            console.print(truncate(intro, 200))
+            console.print(intro)
 
         stats = format_stats_line({
             "Followers": t.get("followers_count", 0),
