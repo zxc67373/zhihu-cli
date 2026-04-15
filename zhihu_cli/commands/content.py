@@ -315,6 +315,63 @@ def feed(limit: int, as_json: bool):
 
 
 @click.command()
+@click.option("-l", "--limit", default=6, help="Number of feed items", show_default=True)
+@click.option("-c", "--comment-limit", default=10, help="Comments per item (0=hide)", show_default=True)
+def feeds(limit: int, comment_limit: int):
+    """Show recommended feed with comments (推荐+评论)."""
+    with _get_client() as client:
+        try:
+            results = client.get_feed(limit=limit)
+            data = results.get("data", [])
+        except Exception as e:
+            print_error(f"Failed to fetch feed: {e}")
+            sys.exit(1)
+
+        if not data:
+            print_info("Feed is empty")
+            return
+
+        for idx, item in enumerate(data, 1):
+            target = item.get("target", {})
+            item_type = target.get("type", "—")
+            item_id = str(target.get("id", "—"))
+            title = strip_html(
+                target.get("title", "")
+                or target.get("question", {}).get("title", "")
+                or truncate(strip_html(target.get("excerpt", "—")), 40)
+            )
+            author = target.get("author", {}).get("name", "—")
+            content = strip_html(target.get("excerpt", target.get("content", "")))
+
+            console.print()
+            console.print(
+                f"[title]  {idx}. [{item_type}] {title}  [/title]"
+            )
+            console.print(f"  [dim]ID: {item_id}  Author: {author}[/dim]")
+            if content:
+                console.print(f"  {content}")
+
+            if comment_limit > 0 and item_type == "answer":
+                try:
+                    c_result = client.get_answer_comments(item_id, limit=comment_limit)
+                    c_data = c_result.get("data", [])
+                except Exception:
+                    c_data = []
+
+                if c_data:
+                    for i, c in enumerate(c_data, 1):
+                        c_content = strip_html(c.get("content", ""))
+                        c_likes = format_count(c.get("vote_count", 0))
+                        console.print(
+                            f"    [dim]{i}.[/dim] {c_content}  [dim]{c_likes} likes[/dim]"
+                        )
+                else:
+                    console.print("    [dim]No comments[/dim]")
+
+        console.print()
+
+
+@click.command()
 @click.argument("topic_id", type=int)
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
 def topic(topic_id: int, as_json: bool):
