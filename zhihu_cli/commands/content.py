@@ -203,7 +203,9 @@ def answers(question_id: int, limit: int, as_json: bool, sort_by: str):
 @click.command()
 @click.argument("answer_id", type=int)
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
-def answer(answer_id: int, as_json: bool):
+@click.option("-c", "--comments", is_flag=True, help="Show comments")
+@click.option("-l", "--limit", default=0, help="Number of comments (0=all)", show_default=True)
+def answer(answer_id: int, as_json: bool, comments: bool, limit: int):
     """Read a specific answer."""
     with _get_client() as client:
         try:
@@ -232,6 +234,41 @@ def answer(answer_id: int, as_json: bool):
         console.print(stats)
         console.print()
 
+        if comments:
+            try:
+                if limit <= 0:
+                    # Fetch all comments via pagination
+                    all_comments = []
+                    offset = 0
+                    page_size = 20
+                    while True:
+                        result = client.get_answer_comments(
+                            str(answer_id), offset=offset, limit=page_size,
+                        )
+                        c_data = result.get("data", [])
+                        all_comments.extend(c_data)
+                        paging = result.get("paging", {})
+                        if paging.get("is_end", True) or not c_data:
+                            break
+                        offset += len(c_data)
+                    c_data = all_comments
+                else:
+                    result = client.get_answer_comments(str(answer_id), limit=limit)
+                    c_data = result.get("data", [])
+            except Exception as e:
+                print_error(f"Failed to fetch comments: {e}")
+                return
+
+            if not c_data:
+                print_info("No comments")
+                return
+
+            for i, c in enumerate(c_data, 1):
+                c_content = strip_html(c.get("content", ""))
+                c_likes = format_count(c.get("vote_count", 0))
+                console.print(f"  [dim]{i}.[/dim] {c_content}  [dim]{c_likes} likes[/dim]")
+            console.print()
+
 
 @click.command()
 @click.option("-l", "--limit", default=10, help="Number of items", show_default=True)
@@ -255,21 +292,22 @@ def feed(limit: int, as_json: bool):
             return
 
         table = make_table(" Recommended Feed ")
-        table.add_column("#", style="dim", width=4)
+        table.add_column("ID", style="dim", min_width=12)
         table.add_column("Type", width=8)
         table.add_column("Title / Excerpt", ratio=1)
         table.add_column("Author", width=14)
 
-        for i, item in enumerate(data, 1):
+        for item in data:
             target = item.get("target", {})
             item_type = target.get("type", "—")
+            item_id = str(target.get("id", "—"))
             title = strip_html(
                 target.get("title", "")
                 or target.get("question", {}).get("title", "")
                 or truncate(strip_html(target.get("excerpt", "—")), 40)
             )
             author = target.get("author", {}).get("name", "—")
-            table.add_row(str(i), item_type, title, author)
+            table.add_row(item_id, item_type, title, author)
 
         console.print()
         console.print(table)
